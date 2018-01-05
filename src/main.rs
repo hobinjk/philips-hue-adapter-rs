@@ -8,7 +8,7 @@ extern crate serde_json;
 use std::io;
 use reqwest::Client;
 mod adapter;
-use adapter::register_plugin;
+use adapter::{register_plugin, Handler, GatewayMessage};
 
 #[derive(Deserialize)]
 struct DiscoveredBridge {
@@ -71,13 +71,24 @@ impl Bridge {
     fn cancel_pairing(&mut self) {
         // cancel this thread?
     }
+
+    fn to_adapter(&self) -> Option<Adapter> {
+        if let PairState::Paired(ref username) = self.state {
+            Some(Adapter {
+                id: self.id.clone(),
+                ip: self.ip.clone(),
+                username: username.clone()
+            })
+        } else {
+            None
+        }
+    }
 }
 
 struct Adapter {
     id: String,
     ip: String,
     username: String,
-    lights: Vec<String>
 }
 
 impl Adapter {
@@ -100,9 +111,31 @@ impl Adapter {
     }
 }
 
+struct PhilipsHuePlugin {
+    adapter: Adapter,
+}
+
+impl Handler for PhilipsHuePlugin {
+    fn handle_msg(&self, msg: GatewayMessage) -> () {
+        let light_id = "1";
+
+        let props = LightProperties {
+            on: true,
+            hue: 0,
+            sat: 0,
+            bri: 255
+        };
+
+        self.adapter.send_properties(&light_id, props);
+    }
+}
+
 fn main() {
     println!("hello world!");
-    register_plugin("philips-hue").unwrap();
+    let bridges = discover_bridges().unwrap();
+    let adapter = bridges[0].to_adapter().unwrap();
+    let plugin = PhilipsHuePlugin { adapter };
+    register_plugin("philips-hue", &plugin).unwrap();
     // spawn::something(|| {
     //     let bridges = discover_bridges().unwrap();
     //     // pair bridges then put adapters on a channel
